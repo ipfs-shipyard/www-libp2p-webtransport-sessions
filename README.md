@@ -1,4 +1,4 @@
-# www-webtransport-sessions
+# www-libp2p-webtransport-sessions
 
 A page that demonstrates the behaviour of the libp2p WebTransport Transport
 
