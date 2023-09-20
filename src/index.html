@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>How many WebTransport sessions are opened</title>
+    <script type="module" defer src="./index.js"></script>
+  </head>
+  <body>
+    <h1>libp2p WebTransport Transport WebTransport Sessions</h1>
+    <p>For each session the general flow is:
+      <ol>
+        <li>Creation</li>
+        <li>Wait for ".ready"/".closed" to resolve or reject</li>
+        <li>Open a bidirectional stream to perform a <a href="https://github.com/libp2p/specs/blob/master/noise/README.md#the-noise-handshake">noise handshake</a></li>
+        <li>Hand off to the libp2p upgrader to make the connection usable by the application</li>
+      </ol>
+    </p>
+    <p>The graph below shows the current state of the transport running live in the page.</p>
+    <ul>
+      <li>"pending" - a session has been created but ".ready"/".closed" have yet to resolve or reject</li>
+      <li>"open" - a session has been created, ".ready" has resolved and the noise handshake has completed</li>
+      <li>"ready_error" - `.ready`/`.closed` rejected</li>
+      <li>"noise_error" - `.ready` resolved but the noise handshake failed</li>
+      <li>"upgrade_error" - the noise handshake succeeded but upgrading the connection failed (e.g. an internal libp2p error)</li>
+      <li>"ready_timeout" - `.ready`/`.closed` did not resolve or reject in a timely fashion</li>
+      <li>"noise_timeout" - `.ready` resolved but we could not transfer data over a bidirectional stream opened on the channel</li>
+      <li>"close" - a graceful close from the local end of the session</li>
+      <li>"abort" - a non-graceful close from the local end of the session</li>
+      <li>"remote_close" - the remote closed the session</li>
+    </ul>
+    <p>Clicking a dataset from the legend will toggle it's inclusion on the graph.</p>
+    <div class="chart-container" style="position: relative; height:400px; width: 100vw">
+      <canvas id="webtransport-stats"></canvas>
+    </div>
+    <ul>
+      <li>Opened sessions in the last <span id="output-webtransport-opened-per-unit">0s</span>: <span id="output-webtransport-opened-per-minute">0</span></li>
+      <li>Max opened connections per minute: <span id="output-webtransport-max-opened-per-minute">0</span></li>
+      <li>Totals:
+        <ul>
+          <li>Success: <span id="output-webtransport-success">0</span></li>
+          <li>Ready error: <span id="output-webtransport-ready-error">0</span></li>
+          <li>Noise error: <span id="output-webtransport-noise-error">0</span></li>
+          <li>Upgrade error: <span id="output-webtransport-upgrade-error">0</span></li>
+          <li>Ready timeout: <span id="output-webtransport-ready-timeout">0</span></li>
+          <li>Noise timeout: <span id="output-webtransport-noise-timeout">0</span></li>
+          <li>Failure rate: <span id="output-webtransport-failure-rate">0</span></li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2>Node</h2>
+    <ul>
+      <li>Peer ID: <span id="output-node-peer-id">Unknown</span></li>
+      <li>Status: <span id="output-node-status">Initialising</span></li>
+      <li>Connections: <span id="output-peer-count">0</span>
+        <ul id="output-peer-types"></ul>
+      </li>
+      <li>Addresses: <span id="output-address-count">0</span>
+        <ul id="output-addresses"></ul>
+      </li>
+    </ul>
+
+    <h2>Peers</h2>
+    <ul id="output-peer-details"></ul>
+
+    <h2>Query</h2>
+    <p>Simulate network traffic by running a DHT query to find peers close to a random set of bytes <button id="button-run-query">Go</button></p>
+    <pre id="output-query"></pre>
+
+    <hr>
+    <p>The source code for this page can be found at <a href="https://github.com/ipfs-shipyard/www-webtransport-connections">ipfs-shipyard/www-webtransport-connections</a></p>
+  </body>
+</html>

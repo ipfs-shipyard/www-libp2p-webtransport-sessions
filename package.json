@@ -1,0 +1,37 @@
+{
+  "name": "www-webtransport-sessions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "How many WebTransport sessions are opened",
+  "license": "ISC",
+  "scripts": {
+    "clean": "rimraf ./dist",
+    "build": "mkdir -p dist && cp src/index.html dist && node ./esbuild.js",
+    "start": "npm run build && esbuild --servedir=dist"
+  },
+  "browserslist": "last 1 Chrome version",
+  "devDependencies": {
+    "aegir": "^40.0.11",
+    "esbuild": "^0.17.16",
+    "rimraf": "^5.0.0"
+  },
+  "eslintConfig": {
+    "extends": "ipfs",
+    "parserOptions": {
+      "sourceType": "module"
+    }
+  },
+  "dependencies": {
+    "@kurkle/color": "^0.3.2",
+    "@libp2p/peer-id-factory": "^3.0.3",
+    "@libp2p/simple-metrics": "^0.0.0",
+    "@multiformats/multiaddr": "^12.1.7",
+    "@multiformats/multiaddr-matcher": "^1.0.1",
+    "chart.js": "^4.4.0",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "date-fns": "^2.30.0",
+    "helia": "^2.0.2",
+    "pretty-ms": "^8.0.0"
+  }
+}
