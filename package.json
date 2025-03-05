@@ -12,7 +12,7 @@
   },
   "browserslist": "last 1 Chrome version",
   "devDependencies": {
-    "aegir": "^40.0.11",
+    "aegir": "^45.1.2",
     "esbuild": "^0.19.3",
     "rimraf": "^5.0.0"
   },
