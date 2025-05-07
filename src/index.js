@@ -1,12 +1,14 @@
-import { createHelia } from 'helia'
-import { WebRTC, WebSockets, WebSocketsSecure, WebTransport, Circuit } from '@multiformats/multiaddr-matcher'
-import { protocols } from '@multiformats/multiaddr'
-import prettyMs from 'pretty-ms'
-import { sha256 } from 'multiformats/hashes/sha2'
+/* eslint-disable complexity */
 import { simpleMetrics } from '@libp2p/simple-metrics'
+import { protocols } from '@multiformats/multiaddr'
+import { WebRTC, WebRTCDirect, WebSockets, WebSocketsSecure, WebTransport, Circuit } from '@multiformats/multiaddr-matcher'
 import { Chart, LineController, CategoryScale, LinearScale, PointElement, LineElement, TimeScale, Legend } from 'chart.js'
+import { createHelia, libp2pDefaults } from 'helia'
+import { sha256 } from 'multiformats/hashes/sha2'
+import prettyMs from 'pretty-ms'
 import 'chartjs-adapter-date-fns'
 import * as Utils from './utils.js'
+import { webTransport } from '@libp2p/webtransport'
 
 // peer ids of known bootstrap nodes
 const bootstrapPeers = [
@@ -48,7 +50,7 @@ const App = async () => {
     webTransportStatsGraph: () => document.getElementById('webtransport-stats')
   }
 
-  let totals = {
+  const totals = {
     readyErrored: 0,
     noiseErrored: 0,
     upgradeErrored: 0,
@@ -57,7 +59,7 @@ const App = async () => {
     success: 0
   }
 
-  let stats = {
+  const stats = {
     pending: 0,
     open: 0,
 
@@ -70,7 +72,7 @@ const App = async () => {
 
     close: 0,
     abort: 0,
-    remote_close: 0,
+    remote_close: 0
   }
 
   let lastStats = {
@@ -129,7 +131,7 @@ const App = async () => {
         display: true,
         title: {
           display: true,
-          text: 'Legend Title',
+          text: 'Legend Title'
         },
         position: 'top',
         labels: {
@@ -157,112 +159,119 @@ const App = async () => {
   let openSessionEvents = []
   let maxOpenSessionsPerMinute = 0
 
+  const libp2p = libp2pDefaults()
+  libp2p.metrics = simpleMetrics({
+    onMetrics: (metrics) => {
+      try {
+        const webTransportEvents = metrics.libp2p_webtransport_dialer_events_total
+        const now = new Date()
+
+        chart.data.labels.push(now.getTime())
+
+        const newPending = (webTransportEvents.pending ?? 0) - (lastStats.pending ?? 0)
+        const newReadyError = (webTransportEvents.ready_error ?? 0) - (lastStats.ready_error ?? 0)
+        const newNoiseError = (webTransportEvents.noise_error ?? 0) - (lastStats.noise_error ?? 0)
+        const newUpgradeError = (webTransportEvents.upgrade_error ?? 0) - (lastStats.upgrade_error ?? 0)
+        const newClose = (webTransportEvents.close ?? 0) - (lastStats.close ?? 0)
+        const newReady = (webTransportEvents.ready ?? 0) - (lastStats.ready ?? 0)
+        const newAbort = (webTransportEvents.abort ?? 0) - (lastStats.abort ?? 0)
+        const newReadyTimeout = (webTransportEvents.ready_timeout ?? 0) - (lastStats.ready_timeout ?? 0)
+        const newNoiseTimeout = (webTransportEvents.noise_timeout ?? 0) - (lastStats.noise_timeout ?? 0)
+        const newOpen = (webTransportEvents.open ?? 0) - (lastStats.open ?? 0)
+        const newRemoteClose = (webTransportEvents.remote_close ?? 0) - (lastStats.remote_close ?? 0)
+
+        stats.pending += newPending
+        stats.pending -= newReadyTimeout
+        stats.pending -= newNoiseTimeout
+        stats.pending -= newReadyError
+        stats.pending -= newNoiseError
+        stats.pending -= newUpgradeError
+        stats.pending -= newOpen
+
+        stats.open += newOpen
+        stats.open -= newClose
+        stats.open -= newRemoteClose
+        stats.open -= newAbort
+
+        // non-cumlative
+        stats.ready_error = newReadyError
+        stats.noise_error = newNoiseError
+        stats.upgrade_error = newUpgradeError
+        stats.ready_timeout = newReadyTimeout
+        stats.noise_timeout = newNoiseTimeout
+        stats.close = newClose
+        stats.abort = newAbort
+        stats.remote_close = newRemoteClose
+
+        totals.success += newReady
+        totals.readyErrored += newReadyError
+        totals.noiseErrored += newNoiseError
+        totals.upgradeErrored += newUpgradeError
+        totals.readyTimedout += newReadyTimeout
+        totals.noiseTimedout += newNoiseTimeout
+
+        DOM.webTransportConnectionsSuccess().innerHTML = totals.success
+        DOM.webTransportConnectionsReadyError().innerHTML = totals.readyErrored
+        DOM.webTransportConnectionsNoiseError().innerHTML = totals.noiseErrored
+        DOM.webTransportConnectionsUpgradeError().innerHTML = totals.upgradeErrored
+        DOM.webTransportConnectionsReadyTimeout().innerHTML = totals.readyTimedout
+        DOM.webTransportConnectionsNoiseTimeout().innerHTML = totals.noiseTimedout
+
+        // work out connections in the last minute
+        openSessionEvents.push(newPending)
+        if (openSessionEvents.length > 60) {
+          DOM.webTransportConnectionsPerUnit().innerText = 'minute'
+          openSessionEvents = openSessionEvents.slice(openSessionEvents.length - 60)
+        } else {
+          DOM.webTransportConnectionsPerUnit().innerText = `${openSessionEvents.length} seconds`
+        }
+        const openSessionEventCount = openSessionEvents.reduce((acc, curr) => acc + curr, 0)
+        DOM.webTransportConnectionsPerMinute().innerText = openSessionEventCount
+
+        // calculate max sessions opened per minute
+        if (openSessionEventCount > maxOpenSessionsPerMinute) {
+          maxOpenSessionsPerMinute = openSessionEventCount
+        }
+        DOM.webTransportMaxConnectionsPerMinute().innerText = maxOpenSessionsPerMinute
+
+        // calculate failure rate
+        const errors = totals.readyErrored + totals.noiseErrored + totals.upgradeErrored
+        const timeouts = totals.readyTimedout + totals.noiseTimedout
+        const failureRate = ((errors + timeouts) / (errors + timeouts + totals.success) * 100).toFixed(2)
+        DOM.webTransportConnectionsFailureRate().innerText = `${failureRate}%`
+
+        Object.keys(stats).forEach((name, index) => {
+          chart.data.datasets[index].data.push({
+            x: now.getTime(),
+            y: stats[name]
+          })
+
+          if (chart.data.datasets[index].data.length > maxPoints) {
+            chart.data.datasets[index].data = chart.data.datasets[index].data.slice(-maxPoints)
+          }
+        })
+
+        if (chart.data.labels.length > maxPoints) {
+          chart.data.labels = chart.data.labels.slice(-maxPoints)
+        }
+
+        chart.update()
+        lastStats = webTransportEvents
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  })
+  libp2p.transports.push(
+    webTransport()
+  )
+  libp2p.connectionMonitor = {
+    enabled: false
+  }
+
   const helia = await createHelia({
     start: false,
-    libp2p: {
-      metrics: simpleMetrics({
-        onMetrics: (metrics) => {
-          try {
-            const webTransportEvents = metrics.libp2p_webtransport_dialer_events_total
-            const now = new Date()
-
-            chart.data.labels.push(now.getTime())
-
-            const newPending = (webTransportEvents.pending ?? 0) - (lastStats.pending ?? 0)
-            const newReadyError = (webTransportEvents.ready_error ?? 0) - (lastStats.ready_error ?? 0)
-            const newNoiseError = (webTransportEvents.noise_error ?? 0) - (lastStats.noise_error ?? 0)
-            const newUpgradeError = (webTransportEvents.upgrade_error ?? 0) - (lastStats.upgrade_error ?? 0)
-            const newClose = (webTransportEvents.close ?? 0) - (lastStats.close ?? 0)
-            const newReady = (webTransportEvents.ready ?? 0) - (lastStats.ready ?? 0)
-            const newAbort = (webTransportEvents.abort ?? 0) - (lastStats.abort ?? 0)
-            const newReadyTimeout = (webTransportEvents.ready_timeout ?? 0) - (lastStats.ready_timeout ?? 0)
-            const newNoiseTimeout = (webTransportEvents.noise_timeout ?? 0) - (lastStats.noise_timeout ?? 0)
-            const newOpen = (webTransportEvents.open ?? 0) - (lastStats.open ?? 0)
-            const newRemoteClose = (webTransportEvents.remote_close ?? 0) - (lastStats.remote_close ?? 0)
-
-            stats.pending += newPending
-            stats.pending -= newReadyTimeout
-            stats.pending -= newNoiseTimeout
-            stats.pending -= newReadyError
-            stats.pending -= newNoiseError
-            stats.pending -= newUpgradeError
-            stats.pending -= newOpen
-
-            stats.open += newOpen
-            stats.open -= newClose
-            stats.open -= newRemoteClose
-            stats.open -= newAbort
-
-            // non-cumlative
-            stats.ready_error = newReadyError
-            stats.noise_error = newNoiseError
-            stats.upgrade_error = newUpgradeError
-            stats.ready_timeout = newReadyTimeout
-            stats.noise_timeout = newNoiseTimeout
-            stats.close = newClose
-            stats.abort = newAbort
-            stats.remote_close = newRemoteClose
-
-            totals.success += newReady
-            totals.readyErrored += newReadyError
-            totals.noiseErrored += newNoiseError
-            totals.upgradeErrored += newUpgradeError
-            totals.readyTimedout += newReadyTimeout
-            totals.noiseTimedout += newNoiseTimeout
-
-            DOM.webTransportConnectionsSuccess().innerHTML = totals.success
-            DOM.webTransportConnectionsReadyError().innerHTML = totals.readyErrored
-            DOM.webTransportConnectionsNoiseError().innerHTML = totals.noiseErrored
-            DOM.webTransportConnectionsUpgradeError().innerHTML = totals.upgradeErrored
-            DOM.webTransportConnectionsReadyTimeout().innerHTML = totals.readyTimedout
-            DOM.webTransportConnectionsNoiseTimeout().innerHTML = totals.noiseTimedout
-
-            // work out connections in the last minute
-            openSessionEvents.push(newPending)
-            if (openSessionEvents.length > 60) {
-              DOM.webTransportConnectionsPerUnit().innerText = 'minute'
-              openSessionEvents = openSessionEvents.slice(openSessionEvents.length - 60)
-            } else {
-              DOM.webTransportConnectionsPerUnit().innerText = `${openSessionEvents.length} seconds`
-            }
-            const openSessionEventCount = openSessionEvents.reduce((acc, curr) => acc + curr, 0)
-            DOM.webTransportConnectionsPerMinute().innerText = openSessionEventCount
-
-            // calculate max sessions opened per minute
-            if (openSessionEventCount > maxOpenSessionsPerMinute) {
-              maxOpenSessionsPerMinute = openSessionEventCount
-            }
-            DOM.webTransportMaxConnectionsPerMinute().innerText = maxOpenSessionsPerMinute
-
-            // calculate failure rate
-            const errors = totals.readyErrored + totals.noiseErrored + totals.upgradeErrored
-            const timeouts = totals.readyTimedout + totals.noiseTimedout
-            const failureRate = ((errors + timeouts) / (errors + timeouts + totals.success) * 100).toFixed(2)
-            DOM.webTransportConnectionsFailureRate().innerText = `${failureRate}%`
-
-            Object.keys(stats).forEach((name, index) => {
-              chart.data.datasets[index].data.push({
-                x: now.getTime(),
-                y: stats[name]
-              })
-
-              if (chart.data.datasets[index].data.length > maxPoints) {
-                chart.data.datasets[index].data = chart.data.datasets[index].data.slice(-maxPoints)
-              }
-            })
-
-            if (chart.data.labels.length > maxPoints) {
-              chart.data.labels = chart.data.labels.slice(-maxPoints)
-            }
-
-            chart.update()
-            lastStats = webTransportEvents
-          } catch (err) {
-            console.error(err)
-          }
-        }
-      })
-    }
+    libp2p
   })
 
   update(DOM.nodePeerId(), helia.libp2p.peerId.toString())
@@ -344,7 +353,7 @@ const App = async () => {
           queryResults[event.from.toString()] = queryResults[event.from.toString()] ?? []
 
           queryResults[event.from.toString()].push(`  ${event.name} ${event.messageName}`)
-          queryResults[event.from.toString()].push(`  Closer peers:`)
+          queryResults[event.from.toString()].push('  Closer peers:')
 
           event.closer.forEach(closer => {
             queryResults[event.from.toString()].push(`    ${closer.id.toString()}`)
@@ -386,6 +395,7 @@ function getPeerTypes (helia) {
   const types = {
     'Circuit Relay': 0,
     WebRTC: 0,
+    'WebRTC Direct': 0,
     WebSockets: 0,
     'WebSockets (secure)': 0,
     WebTransport: 0,
@@ -394,17 +404,19 @@ function getPeerTypes (helia) {
 
   helia.libp2p.getConnections().map(conn => conn.remoteAddr).forEach(ma => {
     if (WebRTC.exactMatch(ma) || ma.toString().includes('/webrtc/')) {
-      types['WebRTC']++
+      types.WebRTC++
+    } else if (WebRTCDirect.exactMatch(ma)) {
+      types['WebRTC Direct']++
     } else if (WebSockets.exactMatch(ma)) {
-      types['WebSockets']++
+      types.WebSockets++
     } else if (WebSocketsSecure.exactMatch(ma)) {
       types['WebSockets (secure)']++
     } else if (WebTransport.exactMatch(ma)) {
-      types['WebTransport']++
+      types.WebTransport++
     } else if (Circuit.exactMatch(ma)) {
       types['Circuit Relay']++
     } else {
-      types['Other']++
+      types.Other++
       console.info('wat', ma.toString())
     }
   })
@@ -427,7 +439,7 @@ function getPeerDetails (helia) {
 
     pingOutput += `<br>Connection age: ${prettyMs(Date.now() - peerConnections[0].timeline.open)}`
 
-    let nodeType = []
+    const nodeType = []
 
     // detect if this is a bootstrap node
     if (bootstrapPeers.includes(peer.toString())) {
@@ -457,7 +469,6 @@ function getPeerDetails (helia) {
     </li>`
   })
     .join('')
-
 }
 
 function update (element, newContent) {
@@ -465,5 +476,3 @@ function update (element, newContent) {
     element.innerHTML = newContent
   }
 }
-
-
