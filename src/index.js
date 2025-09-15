@@ -417,7 +417,7 @@ function getPeerTypes (helia) {
       types['Circuit Relay']++
     } else {
       types.Other++
-      console.info('wat', ma.toString())
+      console.info('Unknown address type', ma.toString())
     }
   })
 
