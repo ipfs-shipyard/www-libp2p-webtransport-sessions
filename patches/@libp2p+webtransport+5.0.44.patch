@@ -1,0 +1,77 @@
+diff --git a/node_modules/@libp2p/webtransport/dist/src/index.js b/node_modules/@libp2p/webtransport/dist/src/index.js
+index ec2223b..d60e437 100644
+--- a/node_modules/@libp2p/webtransport/dist/src/index.js
++++ b/node_modules/@libp2p/webtransport/dist/src/index.js
+@@ -86,14 +86,17 @@ class WebTransportTransport {
+                     value: certhash.digest
+                 }))
+             });
+-            cleanUpWTSession = (metric) => {
++            cleanUpWTSession = (metric, close) => {
+                 if (closed) {
+                     // already closed session
+                     return;
+                 }
+                 try {
+                     this.metrics?.dialerEvents.increment({ [metric]: true });
+-                    wt.close();
++
++                    if (close) {
++                        wt.close();
++                    }
+                 }
+                 catch (err) {
+                     this.log.error('error closing wt session', err);
+@@ -109,10 +112,10 @@ class WebTransportTransport {
+             // if the dial is aborted before we are ready, close the WebTransport session
+             abortListener = () => {
+                 if (ready) {
+-                    cleanUpWTSession('noise_timeout');
++                    cleanUpWTSession('noise_timeout', false);
+                 }
+                 else {
+-                    cleanUpWTSession('ready_timeout');
++                    cleanUpWTSession('ready_timeout', false);
+                 }
+             };
+             options.signal.addEventListener('abort', abortListener, {
+@@ -132,7 +135,7 @@ class WebTransportTransport {
+                 this.log.error('error on remote wt session close', err);
+             })
+                 .finally(() => {
+-                cleanUpWTSession('remote_close');
++                cleanUpWTSession('remote_close', false);
+             });
+             authenticated = await raceSignal(this.authenticateWebTransport({ wt, remotePeer, certhashes, ...options }), options.signal);
+             if (!authenticated) {
+@@ -142,11 +145,11 @@ class WebTransportTransport {
+             maConn = {
+                 close: async () => {
+                     this.log('closing webtransport');
+-                    cleanUpWTSession('close');
++                    cleanUpWTSession('close', true);
+                 },
+                 abort: (err) => {
+                     this.log('aborting webtransport due to passed err', err);
+-                    cleanUpWTSession('abort');
++                    cleanUpWTSession('abort', true);
+                 },
+                 remoteAddr: ma,
+                 timeline: {
+@@ -166,13 +169,13 @@ class WebTransportTransport {
+         catch (err) {
+             this.log.error('caught wt session err', err);
+             if (authenticated) {
+-                cleanUpWTSession('upgrade_error');
++                cleanUpWTSession('upgrade_error', true);
+             }
+             else if (ready) {
+-                cleanUpWTSession('noise_error');
++                cleanUpWTSession('noise_error', true);
+             }
+             else {
+-                cleanUpWTSession('ready_error');
++                cleanUpWTSession('ready_error', false);
+             }
+             throw err;
+         }

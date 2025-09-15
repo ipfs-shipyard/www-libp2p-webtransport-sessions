@@ -13,7 +13,7 @@
   },
   "browserslist": "last 1 Chrome version",
   "devDependencies": {
-    "aegir": "^46.0.0",
+    "aegir": "^47.0.16",
     "esbuild": "^0.25.4",
     "patch-package": "^8.0.0",
     "rimraf": "^6.0.1"
@@ -25,7 +25,7 @@
     }
   },
   "dependencies": {
-    "@kurkle/color": "^0.3.2",
+    "@kurkle/color": "^0.4.0",
     "@libp2p/simple-metrics": "^1.0.0",
     "@libp2p/webtransport": "^5.0.40",
     "@multiformats/multiaddr": "^12.1.7",

@@ -1,0 +1,72 @@
+diff --git a/node_modules/libp2p/dist/src/config/connection-gater.browser.js b/node_modules/libp2p/dist/src/config/connection-gater.browser.js
+index b8515d0..d63a7b7 100644
+--- a/node_modules/libp2p/dist/src/config/connection-gater.browser.js
++++ b/node_modules/libp2p/dist/src/config/connection-gater.browser.js
+@@ -1,7 +1,11 @@
+ import { isPrivateIp } from '@libp2p/utils/private-ip';
+ import { WebSockets } from '@multiformats/multiaddr-matcher';
++import { WebTransport } from '@multiformats/multiaddr-matcher';
++
+ const CODEC_IP4 = 0x04;
+ const CODEC_IP6 = 0x29;
++
++
+ /**
+  * Returns a connection gater that disallows dialling private addresses or
+  * insecure websockets by default.
+@@ -20,6 +24,21 @@ export function connectionGater(gater = {}) {
+                 return false;
+             }
+             const tuples = multiaddr.stringTuples();
++
++            if (WebTransport.exactMatch(multiaddr)) {
++                // no localhost WebTransport
++                if (tuples[0][1] === 'localhost') {
++                    console.info('ignore localhost WebTransport', multiaddr.toString())
++                    return false
++                }
++
++                // only IP-based WebTransport
++                if (!(tuples[0][0] === CODEC_IP4 || tuples[0][0] === CODEC_IP6)) {
++                    console.info('ignore non-ip WebTransport', multiaddr.toString())
++                    return false
++                }
++            }
++
+             // do not connect to private addresses by default
+             if (tuples[0][0] === CODEC_IP4 || tuples[0][0] === CODEC_IP6) {
+                 return Boolean(isPrivateIp(`${tuples[0][1]}`));
+diff --git a/node_modules/libp2p/dist/src/connection-manager/address-sorter.js b/node_modules/libp2p/dist/src/connection-manager/address-sorter.js
+index a60c6c9..ce29aa1 100644
+--- a/node_modules/libp2p/dist/src/connection-manager/address-sorter.js
++++ b/node_modules/libp2p/dist/src/connection-manager/address-sorter.js
+@@ -9,6 +9,14 @@ import { Circuit, WebSockets, WebSocketsSecure, WebRTC, WebRTCDirect, WebTranspo
+  */
+ // eslint-disable-next-line complexity
+ export function reliableTransportsFirst(a, b) {
++    const isAWebTransport = WebTransport.exactMatch(a.multiaddr);
++    const isBWebTransport = WebTransport.exactMatch(b.multiaddr);
++    if (isAWebTransport && !isBWebTransport) {
++        return -1;
++    }
++    if (!isAWebTransport && isBWebTransport) {
++        return 1;
++    }
+     const isATcp = TCP.exactMatch(a.multiaddr);
+     const isBTcp = TCP.exactMatch(b.multiaddr);
+     if (isATcp && !isBTcp) {
+@@ -49,14 +57,6 @@ export function reliableTransportsFirst(a, b) {
+     if (!isAWebRTCDirect && isBWebRTCDirect) {
+         return 1;
+     }
+-    const isAWebTransport = WebTransport.exactMatch(a.multiaddr);
+-    const isBWebTransport = WebTransport.exactMatch(b.multiaddr);
+-    if (isAWebTransport && !isBWebTransport) {
+-        return -1;
+-    }
+-    if (!isAWebTransport && isBWebTransport) {
+-        return 1;
+-    }
+     // ... everything else
+     return 0;
+ }
